@@ -1,2 +1,7 @@
-package com.example.assessments.exception;public class FileNotFoundException {
+package com.example.assessments.exception;
+
+public class FileNotFoundException extends RuntimeException {
+    public FileNotFoundException(String message) {
+        super(message);
+    }
 }

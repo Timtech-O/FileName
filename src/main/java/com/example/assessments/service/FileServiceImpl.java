@@ -1,99 +1,93 @@
 package com.example.assessments.service;
 
-import com.example.assessments.exception.FileNotFoundException;
-import com.example.assessments.exception.InvalidFileException;
 import com.example.assessments.model.FileMetadata;
-import jakarta.annotation.Resource;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.UrlResource;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.*;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 @Service
-public class FileService {
+public class FileServiceImpl implements FileService {
 
-    private final Map<String, FileMetadata> storage = new HashMap<>();
+    private final Path uploadDir = Paths.get("uploads");
+    private final Map<String, FileMetadata> metadataStore = new HashMap<>();
 
-    @Value("${file.upload-dir}")
-    private String uploadDir;
-
-    public FileMetadata uploadFile(MultipartFile file) {
-        validateFile(file);
-
+    public FileServiceImpl() {
         try {
-            String id = UUID.randomUUID().toString();
-            String extension = getExtension(file.getOriginalFilename());
-            String storedFileName = id + "." + extension;
-
-            Path path = Paths.get(uploadDir, storedFileName);
-            Files.createDirectories(path.getParent());
-
-            Files.copy(file.getInputStream(), path, StandardCopyOption.REPLACE_EXISTING);
-
-            FileMetadata metadata = new FileMetadata(
-                    id,
-                    file.getOriginalFilename(),
-                    storedFileName,
-                    file.getContentType(),
-                    file.getSize()
-            );
-
-            storage.put(id, metadata);
-            return metadata;
-
+            if (!Files.exists(uploadDir)) {
+                Files.createDirectories(uploadDir);
+            }
         } catch (IOException e) {
-            throw new RuntimeException("File upload failed");
+            throw new RuntimeException("Could not create upload directory", e);
         }
     }
 
-    public Resource getFile(String id) {
-        FileMetadata metadata = storage.get(id);
+    @Override
+    public FileMetadata uploadFile(MultipartFile file) {
 
-        if (metadata == null) {
-            throw new FileNotFoundException("File not found");
+        if (file.isEmpty()) {
+            throw new RuntimeException("File is empty");
         }
+
+        String originalFileName = StringUtils.cleanPath(file.getOriginalFilename());
+
+        // ✅ Generate ONE ID
+        String id = UUID.randomUUID().toString();
+
+        // ✅ Use same ID for stored filename
+        String storedFileName = id + "_" + originalFileName;
+
+        Path targetLocation = uploadDir.resolve(storedFileName);
 
         try {
-            Path path = Paths.get(uploadDir).resolve(metadata.getStoredFileName());
-            return (Resource) new UrlResource(path.toUri());
+            Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to store file", e);
+        }
+
+        // ✅ Use SAME ID here
+        FileMetadata metadata = new FileMetadata(
+                id,
+                originalFileName,
+                storedFileName,
+                file.getContentType(),
+                file.getSize()
+        );
+
+        metadataStore.put(id, metadata);
+
+        return metadata;
+    }
+
+    @Override
+    public Resource getFile(String id) {
+        FileMetadata metadata = getMetadata(id);
+        Path filePath = uploadDir.resolve(metadata.getStoredFileName()).normalize();
+
+        try {
+            Resource resource = new UrlResource(filePath.toUri());
+            if (resource.exists()) {
+                return resource;
+            } else {
+                throw new RuntimeException("File not found");
+            }
         } catch (MalformedURLException e) {
-            throw new RuntimeException("Error retrieving file");
+            throw new RuntimeException("File URL is invalid", e);
         }
     }
 
-    private void validateFile(MultipartFile file) {
-        List<String> allowed = List.of("image/jpeg", "image/png", "application/pdf");
-
-        if (!allowed.contains(file.getContentType())) {
-            throw new InvalidFileException("Only JPG, PNG, PDF allowed");
-        }
-
-        if (file.getSize() > 5 * 1024 * 1024) {
-            throw new InvalidFileException("File exceeds 5MB");
-        }
-    }
-
-    private String getExtension(String filename) {
-        return filename.substring(filename.lastIndexOf('.') + 1);
-    }
+    @Override
     public FileMetadata getMetadata(String id) {
-        FileMetadata metadata = storage.get(id);
-
-        if (metadata == null) {
-            throw new FileNotFoundException("File not found");
-        }
-
+        FileMetadata metadata = metadataStore.get(id);
+        if (metadata == null) throw new RuntimeException("File not found");
         return metadata;
     }
 }
