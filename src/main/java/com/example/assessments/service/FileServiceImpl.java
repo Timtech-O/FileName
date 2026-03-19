@@ -39,10 +39,10 @@ public class FileServiceImpl implements FileService {
 
         String originalFileName = StringUtils.cleanPath(file.getOriginalFilename());
 
-        // ✅ Generate ONE ID
+        //  Generate ONE ID
         String id = UUID.randomUUID().toString();
 
-        // ✅ Use same ID for stored filename
+        // Use same ID for stored filename
         String storedFileName = id + "_" + originalFileName;
 
         Path targetLocation = uploadDir.resolve(storedFileName);
@@ -53,7 +53,7 @@ public class FileServiceImpl implements FileService {
             throw new RuntimeException("Failed to store file", e);
         }
 
-        // ✅ Use SAME ID here
+        //  Use SAME ID here
         FileMetadata metadata = new FileMetadata(
                 id,
                 originalFileName,
